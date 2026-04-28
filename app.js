@@ -27,6 +27,7 @@ const db = configured ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null;
 let gameId    = null;
 let gameState = null; // { denominations: [{id,label,color,value}], players: {id: {id,name,chips,buyins}} }
 let myName    = sessionStorage.getItem('playerName') || '';
+let myAuthUid = null;
 
 // ── Utilities ──────────────────────────────────────────────
 function uuid() {
@@ -39,7 +40,7 @@ function uuid() {
 
 function genGameId() {
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-  return Array.from({ length: 6 }, () => chars[Math.floor(Math.random() * chars.length)]).join('');
+  return Array.from({ length: 8 }, () => chars[Math.floor(Math.random() * chars.length)]).join('');
 }
 
 function esc(str) {
@@ -97,6 +98,8 @@ async function ensureAuth() {
     const { error } = await db.auth.signInAnonymously();
     if (error) throw error;
   }
+  const { data: { user } } = await db.auth.getUser();
+  myAuthUid = user.id;
 }
 
 // ── Database helpers ───────────────────────────────────────
@@ -197,7 +200,7 @@ async function removeDenom(denomId) {
 
 async function postChat(playerName, message) {
   const { error } = await db
-    .from('chat_messages').insert({ game_id: gameId, player_name: playerName, message });
+    .from('chat_messages').insert({ game_id: gameId, player_name: playerName, auth_user_id: myAuthUid, message });
   if (error) throw error;
 }
 
@@ -225,6 +228,12 @@ function subscribe() {
 }
 
 // ── Rendering ──────────────────────────────────────────────
+function updateChatNameDisplay() {
+  const player = Object.values(gameState?.players || {}).find(p => p.auth_user_id === myAuthUid);
+  const el     = document.getElementById('chat-name-display');
+  if (el) el.textContent = player?.name || myName || '';
+}
+
 function renderGame() {
   if (!gameState) return;
   const denoms  = gameState.denominations || [];
@@ -232,6 +241,7 @@ function renderGame() {
   renderPlayers(players, denoms);
   renderDenoms(denoms);
   renderSettle(players, denoms);
+  updateChatNameDisplay();
 }
 
 function renderPlayers(players, denoms) {
@@ -612,13 +622,18 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // ── Chat ───────────────────────────────────────────────
   async function sendChat() {
-    const nameEl = document.getElementById('chat-name');
-    const msgEl  = document.getElementById('chat-message');
-    const name   = nameEl.value.trim() || myName || 'Anonymous';
-    const msg    = msgEl.value.trim();
+    const msgEl = document.getElementById('chat-message');
+    const msg   = msgEl.value.trim();
     if (!msg) return;
-    nameEl.value = name;
-    msgEl.value  = '';
+
+    const player = Object.values(gameState?.players || {}).find(p => p.auth_user_id === myAuthUid);
+    const name   = player?.name || myName || 'Anonymous';
+
+    msgEl.value = '';
+    const btn = document.getElementById('btn-send-chat');
+    btn.disabled = true;
+    setTimeout(() => (btn.disabled = false), 3000);
+
     try { await postChat(name, msg); } catch (e) { console.error(e); }
   }
 
@@ -626,9 +641,6 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('chat-message').addEventListener('keydown', e => {
     if (e.key === 'Enter') sendChat();
   });
-
-  // Pre-fill chat name from session
-  if (myName) document.getElementById('chat-name').value = myName;
 
   // ── Close modal on overlay click ───────────────────────
   document.getElementById('modal-overlay').addEventListener('click', e => {

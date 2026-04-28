@@ -257,6 +257,23 @@ header h1 { font-size: 1.15rem; color: var(--gold); font-weight: 700; }
   padding-bottom: 1.25rem;
 }
 
+.chat-name-display {
+  width: 130px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  padding: 0 0.6rem;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-weight: 600;
+  font-size: 0.88rem;
+  color: var(--gold);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 /* ── Settle ────────────────────────────────────────────── */
 .settle-table {
   width: 100%;
