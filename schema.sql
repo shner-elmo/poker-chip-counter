@@ -3,68 +3,100 @@
 -- Run this in: Supabase Dashboard → SQL Editor → New query
 -- ============================================================
 
--- 1. Games table
---    Stores the entire game state as a JSON blob.
---    Each row is one poker session, keyed by a 6-char game ID.
+-- 1. Games
 create table if not exists games (
-  id          text        primary key,
-  state       jsonb       not null default '{"denominations":[],"players":{}}',
-  created_at  timestamptz not null default now(),
-  updated_at  timestamptz not null default now()
+  id          text        primary key,   -- 6-char code e.g. "AB3X7K"
+  created_at  timestamptz not null default now()
 );
 
--- 2. Chat messages table
---    Separate table so messages can be appended without
---    touching the main game state blob.
+-- 2. Chip denominations
+create table if not exists denominations (
+  id          uuid        primary key default gen_random_uuid(),
+  game_id     text        not null references games(id) on delete cascade,
+  label       text        not null,
+  color       text        not null default '#ffffff',
+  value       numeric     not null,
+  sort_order  int         not null default 0
+);
+
+create index if not exists denominations_game_id_idx on denominations(game_id);
+
+-- 3. Players
+create table if not exists players (
+  id          uuid        primary key default gen_random_uuid(),
+  game_id     text        not null references games(id) on delete cascade,
+  name        text        not null,
+  created_at  timestamptz not null default now()
+);
+
+create index if not exists players_game_id_idx on players(game_id);
+
+-- 4. Chip counts (one row per player × denomination)
+--    game_id is denormalized here so realtime filters can use it directly.
+create table if not exists player_chips (
+  player_id       uuid    not null references players(id)       on delete cascade,
+  denomination_id uuid    not null references denominations(id) on delete cascade,
+  game_id         text    not null references games(id)         on delete cascade,
+  count           int     not null default 0,
+  primary key (player_id, denomination_id)
+);
+
+create index if not exists player_chips_game_id_idx on player_chips(game_id);
+
+-- 5. Buy-ins (one row per buy-in event)
+create table if not exists buyins (
+  id          uuid        primary key default gen_random_uuid(),
+  player_id   uuid        not null references players(id) on delete cascade,
+  game_id     text        not null references games(id)   on delete cascade,
+  amount      numeric     not null,
+  created_at  timestamptz not null default now()
+);
+
+create index if not exists buyins_game_id_idx on buyins(game_id);
+
+-- 6. Chat messages
 create table if not exists chat_messages (
-  id           uuid        primary key default gen_random_uuid(),
-  game_id      text        not null references games(id) on delete cascade,
-  player_name  text        not null,
-  message      text        not null,
-  created_at   timestamptz not null default now()
+  id          uuid        primary key default gen_random_uuid(),
+  game_id     text        not null references games(id) on delete cascade,
+  player_name text        not null,
+  message     text        not null,
+  created_at  timestamptz not null default now()
 );
 
 create index if not exists chat_messages_game_id_idx on chat_messages(game_id);
 
 -- ============================================================
 -- Row Level Security
--- The anon key is public, so RLS is the only guard against
--- abuse.  These policies are intentionally permissive for a
--- demo app; tighten them once you add authentication.
 -- ============================================================
 
 alter table games         enable row level security;
+alter table denominations enable row level security;
+alter table players       enable row level security;
+alter table player_chips  enable row level security;
+alter table buyins        enable row level security;
 alter table chat_messages enable row level security;
 
--- Anyone can read / write games (game IDs are hard to guess —
--- 6 chars from a 32-symbol alphabet = ~1 billion combinations).
-create policy "public_games"
-  on games for all
-  to anon, authenticated
-  using (true)
-  with check (true);
-
-create policy "public_chat"
-  on chat_messages for all
-  to anon, authenticated
-  using (true)
-  with check (true);
+create policy "public_games"         on games         for all to anon, authenticated using (true) with check (true);
+create policy "public_denominations" on denominations for all to anon, authenticated using (true) with check (true);
+create policy "public_players"       on players       for all to anon, authenticated using (true) with check (true);
+create policy "public_player_chips"  on player_chips  for all to anon, authenticated using (true) with check (true);
+create policy "public_buyins"        on buyins        for all to anon, authenticated using (true) with check (true);
+create policy "public_chat"          on chat_messages for all to anon, authenticated using (true) with check (true);
 
 -- ============================================================
 -- Realtime
--- Enable realtime for both tables so that connected clients
--- receive live updates via WebSocket.
--- You can also enable this in:
---   Dashboard → Database → Replication → supabase_realtime
 -- ============================================================
 
 alter publication supabase_realtime add table games;
+alter publication supabase_realtime add table denominations;
+alter publication supabase_realtime add table players;
+alter publication supabase_realtime add table player_chips;
+alter publication supabase_realtime add table buyins;
 alter publication supabase_realtime add table chat_messages;
 
 -- ============================================================
 -- Optional: auto-delete games older than 7 days
 -- Requires the pg_cron extension (Supabase Pro plan).
--- Uncomment if you want automatic cleanup.
 -- ============================================================
 -- select cron.schedule(
 --   'delete-old-games',

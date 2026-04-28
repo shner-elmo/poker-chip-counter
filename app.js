@@ -86,114 +86,124 @@ function calcSettlements(players, denoms) {
   return txns;
 }
 
-// ── Supabase helpers ───────────────────────────────────────
-async function fetchState() {
-  const { data, error } = await db.from('games').select('state').eq('id', gameId).single();
-  if (error) throw error;
-  return data.state;
-}
+// ── Database helpers ───────────────────────────────────────
 
-async function pushState(newState) {
-  const { error } = await db
-    .from('games')
-    .update({ state: newState, updated_at: new Date().toISOString() })
-    .eq('id', gameId);
-  if (error) throw error;
-}
+// Fetches all 5 tables in parallel and assembles the gameState shape
+// that the render functions consume. No JSON blobs — each entity is its own row.
+async function loadGameState() {
+  const [
+    { data: playerRows, error: e1 },
+    { data: denomRows,  error: e2 },
+    { data: chipRows,   error: e3 },
+    { data: buyinRows,  error: e4 },
+  ] = await Promise.all([
+    db.from('players')      .select('*').eq('game_id', gameId).order('created_at'),
+    db.from('denominations').select('*').eq('game_id', gameId).order('sort_order'),
+    db.from('player_chips') .select('*').eq('game_id', gameId),
+    db.from('buyins')       .select('*').eq('game_id', gameId).order('created_at'),
+  ]);
 
-// Fetch-then-mutate pattern keeps concurrent writes from clobbering each other
-// when different players edit different sections simultaneously.
-async function mutateState(fn) {
-  const latest = await fetchState();
-  const updated = fn(latest);
-  await pushState(updated);
+  if (e1 || e2 || e3 || e4) throw e1 || e2 || e3 || e4;
+
+  const state = { denominations: denomRows || [], players: {} };
+
+  (playerRows || []).forEach(p => {
+    state.players[p.id] = { ...p, chips: {}, buyins: [] };
+  });
+  (chipRows || []).forEach(c => {
+    if (state.players[c.player_id]) {
+      state.players[c.player_id].chips[c.denomination_id] = c.count;
+    }
+  });
+  (buyinRows || []).forEach(b => {
+    if (state.players[b.player_id]) {
+      state.players[b.player_id].buyins.push(b.amount);
+    }
+  });
+
+  return state;
 }
 
 // ── Game actions ───────────────────────────────────────────
+
 async function createGame(hostName, denoms) {
-  const id     = genGameId();
-  const hostId = uuid();
-  const state  = {
-    denominations: denoms,
-    players: {
-      [hostId]: { id: hostId, name: hostName, chips: {}, buyins: [] },
-    },
-  };
-  const { error } = await db.from('games').insert({ id, state });
-  if (error) throw error;
-  return id;
+  const id = genGameId();
+
+  const { error: ge } = await db.from('games').insert({ id });
+  if (ge) throw ge;
+
+  const denomRows = denoms.map((d, i) => ({
+    id: uuid(), game_id: id, label: d.label, color: d.color, value: d.value, sort_order: i,
+  }));
+  const { error: de } = await db.from('denominations').insert(denomRows);
+  if (de) throw de;
+
+  const { data: [host], error: pe } = await db
+    .from('players').insert({ game_id: id, name: hostName }).select();
+  if (pe) throw pe;
+
+  return { id, hostPlayerId: host.id };
 }
 
 async function addPlayer(name) {
-  const id = uuid();
-  await mutateState(s => {
-    s.players[id] = { id, name, chips: {}, buyins: [] };
-    return s;
-  });
+  const { error } = await db.from('players').insert({ game_id: gameId, name });
+  if (error) throw error;
 }
 
 async function addBuyin(playerId, amount) {
-  await mutateState(s => {
-    (s.players[playerId].buyins = s.players[playerId].buyins || []).push(amount);
-    return s;
-  });
+  const { error } = await db
+    .from('buyins').insert({ game_id: gameId, player_id: playerId, amount });
+  if (error) throw error;
 }
 
 async function setChips(playerId, denomId, count) {
-  await mutateState(s => {
-    (s.players[playerId].chips = s.players[playerId].chips || {})[denomId] = count;
-    return s;
-  });
+  const { error } = await db.from('player_chips').upsert(
+    { player_id: playerId, denomination_id: denomId, game_id: gameId, count },
+    { onConflict: 'player_id,denomination_id' }
+  );
+  if (error) throw error;
 }
 
 async function addDenom(label, color, value) {
-  const id = uuid();
-  await mutateState(s => {
-    s.denominations.push({ id, label, color, value });
-    return s;
+  const sortOrder = gameState?.denominations?.length || 0;
+  const { error } = await db.from('denominations').insert({
+    id: uuid(), game_id: gameId, label, color, value, sort_order: sortOrder,
   });
+  if (error) throw error;
 }
 
 async function removeDenom(denomId) {
-  await mutateState(s => {
-    s.denominations = s.denominations.filter(d => d.id !== denomId);
-    for (const pid in s.players) {
-      delete (s.players[pid].chips || {})[denomId];
-    }
-    return s;
-  });
+  const { error } = await db.from('denominations').delete().eq('id', denomId);
+  if (error) throw error;
+  // player_chips rows for this denomination cascade-delete via FK
 }
 
 async function postChat(playerName, message) {
-  const { error } = await db.from('chat_messages').insert({ game_id: gameId, player_name: playerName, message });
+  const { error } = await db
+    .from('chat_messages').insert({ game_id: gameId, player_name: playerName, message });
   if (error) throw error;
 }
 
 // ── Realtime subscriptions ─────────────────────────────────
 function subscribe() {
-  // Game state changes
-  db.channel(`game:${gameId}`)
-    .on('postgres_changes', {
-      event:  'UPDATE',
-      schema: 'public',
-      table:  'games',
-      filter: `id=eq.${gameId}`,
-    }, payload => {
-      gameState = payload.new.state;
-      renderGame();
-    })
-    .subscribe();
+  // Re-fetch and re-render whenever any game data row changes
+  ['players', 'denominations', 'player_chips', 'buyins'].forEach(table => {
+    db.channel(`${table}:${gameId}`)
+      .on('postgres_changes', {
+        event: '*', schema: 'public', table, filter: `game_id=eq.${gameId}`,
+      }, async () => {
+        gameState = await loadGameState();
+        renderGame();
+      })
+      .subscribe();
+  });
 
-  // Incoming chat messages
+  // Chat gets its own channel — just append, no full re-render needed
   db.channel(`chat:${gameId}`)
     .on('postgres_changes', {
-      event:  'INSERT',
-      schema: 'public',
-      table:  'chat_messages',
+      event: 'INSERT', schema: 'public', table: 'chat_messages',
       filter: `game_id=eq.${gameId}`,
-    }, payload => {
-      appendChatMsg(payload.new);
-    })
+    }, payload => appendChatMsg(payload.new))
     .subscribe();
 }
 
@@ -425,15 +435,11 @@ async function init() {
   const params = new URLSearchParams(location.search);
   gameId = params.get('game');
 
-  if (!gameId) {
-    showLanding();
-    return;
-  }
-
+  if (!gameId) { showLanding(); return; }
   if (!configured) { showLanding(); return; }
 
   try {
-    gameState = await fetchState();
+    gameState = await loadGameState();
   } catch {
     alert('Game not found. The link may be invalid.');
     history.replaceState(null, '', location.pathname);
@@ -480,20 +486,21 @@ document.addEventListener('DOMContentLoaded', () => {
     const hostName = document.getElementById('ng-host-name').value.trim();
     if (!hostName) { alert('Please enter your name.'); return; }
 
-    const rows  = document.querySelectorAll('#ng-denoms .denom-input-row');
+    const rows   = document.querySelectorAll('#ng-denoms .denom-input-row');
     const denoms = [];
     for (const row of rows) {
       const label = row.querySelector('.denom-name-input').value.trim();
       const color = row.querySelector('.color-input').value;
       const value = parseFloat(row.querySelector('.denom-val-input').value);
       if (!label || isNaN(value) || value <= 0) continue;
-      denoms.push({ id: uuid(), label, color, value });
+      denoms.push({ label, color, value });
     }
     if (!denoms.length) { alert('Add at least one chip denomination.'); return; }
 
     try {
-      gameId    = await createGame(hostName, denoms);
-      gameState = await fetchState();
+      const { id } = await createGame(hostName, denoms);
+      gameId    = id;
+      gameState = await loadGameState();
       closeModals();
       history.pushState(null, '', `?game=${gameId}`);
       document.getElementById('game-id-display').textContent = `Game: ${gameId}`;
@@ -560,8 +567,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const label = document.getElementById('ad-label').value.trim();
     const color = document.getElementById('ad-color').value;
     const value = parseFloat(document.getElementById('ad-value').value);
-    if (!label)              { alert('Enter a label.');          return; }
-    if (isNaN(value) || value <= 0) { alert('Enter a valid value.'); return; }
+    if (!label)                      { alert('Enter a label.');          return; }
+    if (isNaN(value) || value <= 0)  { alert('Enter a valid value.');    return; }
     try {
       await addDenom(label, color, value);
       closeModals();
