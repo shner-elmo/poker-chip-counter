@@ -57,11 +57,12 @@ create index if not exists buyins_game_id_idx on buyins(game_id);
 
 -- 6. Chat messages
 create table if not exists chat_messages (
-  id          uuid        primary key default gen_random_uuid(),
-  game_id     text        not null references games(id) on delete cascade,
-  player_name text        not null,
-  message     text        not null,
-  created_at  timestamptz not null default now()
+  id           uuid        primary key default gen_random_uuid(),
+  game_id      text        not null references games(id) on delete cascade,
+  player_name  text        not null,
+  auth_user_id uuid        not null references auth.users(id),
+  message      text        not null,
+  created_at   timestamptz not null default now()
 );
 
 create index if not exists chat_messages_game_id_idx on chat_messages(game_id);
@@ -172,10 +173,18 @@ create policy "chat_select" on chat_messages
 create policy "chat_insert" on chat_messages
   for insert to authenticated
   with check (
-    exists (
+    auth_user_id = auth.uid()
+    AND exists (
       select 1 from players
       where players.game_id = chat_messages.game_id
         and players.auth_user_id = auth.uid()
+        and players.name = chat_messages.player_name
+    )
+    AND NOT EXISTS (
+      select 1 from chat_messages recent
+      where recent.game_id = chat_messages.game_id
+        and recent.auth_user_id = auth.uid()
+        and recent.created_at > now() - interval '3 seconds'
     )
   );
 
