@@ -533,6 +533,37 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   });
 
+  // ── Join game modal ────────────────────────────────────
+  document.getElementById('btn-join-game').addEventListener('click', () => {
+    document.getElementById('jg-code').value = '';
+    openModal('modal-join-game');
+    setTimeout(() => document.getElementById('jg-code').focus(), 50);
+  });
+
+  document.getElementById('jg-cancel').addEventListener('click', closeModals);
+
+  async function joinGame() {
+    const code = document.getElementById('jg-code').value.trim().toUpperCase();
+    if (!code) { alert('Please enter a game code.'); return; }
+
+    if (!configured) { alert('Fill in your Supabase credentials in app.js first.'); return; }
+
+    await ensureAuth();
+
+    const { data, error } = await db.from('games').select('id').eq('id', code).maybeSingle();
+    if (error || !data) { alert('Game not found. Check the code and try again.'); return; }
+
+    location.search = `?game=${code}`;
+  }
+
+  document.getElementById('jg-join').addEventListener('click', joinGame);
+  document.getElementById('jg-code').addEventListener('keydown', e => {
+    if (e.key === 'Enter') joinGame();
+  });
+  document.getElementById('jg-code').addEventListener('input', e => {
+    e.target.value = e.target.value.toUpperCase();
+  });
+
   // ── Add player modal ───────────────────────────────────
   document.getElementById('btn-add-player').addEventListener('click', () => {
     document.getElementById('ap-name').value = myName;
