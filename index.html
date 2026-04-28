@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Poker Chip Counter</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+  <!-- ── Landing Screen ─────────────────────────────────── -->
+  <div id="landing" class="screen">
+    <div class="landing-card">
+      <div class="landing-icon">&#9827;</div>
+      <h1>Poker Chip Counter</h1>
+      <p>Track chips, buy-ins, and settle up after the game.</p>
+      <button id="btn-new-game" class="btn btn-primary btn-lg">New Game</button>
+    </div>
+  </div>
+
+  <!-- ── Game Screen ────────────────────────────────────── -->
+  <div id="game" class="screen hidden">
+
+    <header>
+      <h1>&#9827; Poker Chip Counter</h1>
+      <div class="game-id-bar">
+        <span id="game-id-display"></span>
+        <button id="btn-copy-link" class="btn btn-sm">Copy Link</button>
+      </div>
+    </header>
+
+    <nav class="tabs">
+      <button class="tab active" data-tab="players">Players</button>
+      <button class="tab" data-tab="denominations">Chips</button>
+      <button class="tab" data-tab="chat">Chat</button>
+      <button class="tab" data-tab="settle">Settle</button>
+    </nav>
+
+    <!-- Players -->
+    <section id="tab-players" class="tab-panel active">
+      <div class="tab-actions">
+        <button id="btn-add-player" class="btn btn-primary">+ Add Player</button>
+      </div>
+      <div id="players-grid" class="players-grid"></div>
+    </section>
+
+    <!-- Chip Denominations -->
+    <section id="tab-denominations" class="tab-panel hidden">
+      <div class="tab-actions">
+        <button id="btn-add-denom" class="btn btn-primary">+ Add Chip</button>
+      </div>
+      <div id="denoms-list" class="denoms-list"></div>
+    </section>
+
+    <!-- Chat -->
+    <section id="tab-chat" class="tab-panel hidden">
+      <div id="chat-messages" class="chat-messages"></div>
+      <div class="chat-input-bar">
+        <input id="chat-name"    type="text"   class="input" placeholder="Your name"  maxlength="20" style="width:130px;flex-shrink:0">
+        <input id="chat-message" type="text"   class="input flex-1" placeholder="Message…" maxlength="200">
+        <button id="btn-send-chat" class="btn btn-primary">Send</button>
+      </div>
+    </section>
+
+    <!-- Settle -->
+    <section id="tab-settle" class="tab-panel hidden">
+      <div id="settle-content" class="settle-content"></div>
+    </section>
+
+  </div>
+
+  <!-- ── Modals ─────────────────────────────────────────── -->
+  <div id="modal-overlay" class="modal-overlay hidden">
+
+    <!-- New Game -->
+    <div id="modal-new-game" class="modal hidden">
+      <h2>New Game</h2>
+      <div class="form-group">
+        <label>Your Name</label>
+        <input id="ng-host-name" type="text" class="input" placeholder="e.g. Alice" maxlength="30">
+      </div>
+      <div class="form-group">
+        <label>Chip Denominations</label>
+        <div id="ng-denoms" class="ng-denoms"></div>
+        <button id="ng-add-denom" class="btn btn-sm" style="margin-top:0.5rem">+ Add Chip</button>
+      </div>
+      <div class="modal-actions">
+        <button id="ng-cancel" class="btn">Cancel</button>
+        <button id="ng-create" class="btn btn-primary">Create Game</button>
+      </div>
+    </div>
+
+    <!-- Add Player -->
+    <div id="modal-add-player" class="modal hidden">
+      <h2>Join Game</h2>
+      <div class="form-group">
+        <label>Your Name</label>
+        <input id="ap-name" type="text" class="input" placeholder="e.g. Bob" maxlength="30">
+      </div>
+      <div class="modal-actions">
+        <button id="ap-cancel" class="btn">Cancel</button>
+        <button id="ap-confirm" class="btn btn-primary">Join</button>
+      </div>
+    </div>
+
+    <!-- Buy-in -->
+    <div id="modal-buyin" class="modal hidden">
+      <h2>Record Buy-in</h2>
+      <p id="bi-player-name" class="modal-subtitle"></p>
+      <div class="form-group">
+        <label>Amount ($)</label>
+        <input id="bi-amount" type="number" class="input" placeholder="e.g. 100" min="1" step="any">
+      </div>
+      <div class="modal-actions">
+        <button id="bi-cancel" class="btn">Cancel</button>
+        <button id="bi-confirm" class="btn btn-primary">Add Buy-in</button>
+      </div>
+    </div>
+
+    <!-- Add Denomination (in-game) -->
+    <div id="modal-add-denom" class="modal hidden">
+      <h2>Add Chip</h2>
+      <div class="form-group">
+        <label>Label</label>
+        <input id="ad-label" type="text" class="input" placeholder="e.g. Purple" maxlength="20">
+      </div>
+      <div class="form-group">
+        <label>Color</label>
+        <input id="ad-color" type="color" class="color-input-lg" value="#9b59b6">
+      </div>
+      <div class="form-group">
+        <label>Value ($)</label>
+        <input id="ad-value" type="number" class="input" placeholder="e.g. 500" min="0.01" step="0.01">
+      </div>
+      <div class="modal-actions">
+        <button id="ad-cancel" class="btn">Cancel</button>
+        <button id="ad-confirm" class="btn btn-primary">Add</button>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- ── Config Error Banner ────────────────────────────── -->
+  <div id="config-error" class="config-error hidden">
+    <strong>Setup required:</strong> Open <code>app.js</code> and fill in your
+    <code>SUPABASE_URL</code> and <code>SUPABASE_ANON_KEY</code>. See
+    <code>schema.sql</code> for the database setup.
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
