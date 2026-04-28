@@ -23,10 +23,11 @@ create index if not exists denominations_game_id_idx on denominations(game_id);
 
 -- 3. Players
 create table if not exists players (
-  id          uuid        primary key default gen_random_uuid(),
-  game_id     text        not null references games(id) on delete cascade,
-  name        text        not null,
-  created_at  timestamptz not null default now()
+  id           uuid        primary key default gen_random_uuid(),
+  game_id      text        not null references games(id) on delete cascade,
+  name         text        not null,
+  auth_user_id uuid        not null references auth.users(id),  -- ties row to the browser session
+  created_at   timestamptz not null default now()
 );
 
 create index if not exists players_game_id_idx on players(game_id);
@@ -67,6 +68,15 @@ create index if not exists chat_messages_game_id_idx on chat_messages(game_id);
 
 -- ============================================================
 -- Row Level Security
+--
+-- All users sign in anonymously on page load (app.js: ensureAuth).
+-- This gives every browser session a real JWT and an auth.uid(),
+-- so every policy targets the `authenticated` role only.
+--
+-- Write rules:
+--   games       → any authenticated user can create a game
+--   players     → any authenticated user can join, but auth_user_id must equal their own uid
+--   everything  → only game members (players rows with matching auth_user_id) can write
 -- ============================================================
 
 alter table games         enable row level security;
@@ -76,12 +86,98 @@ alter table player_chips  enable row level security;
 alter table buyins        enable row level security;
 alter table chat_messages enable row level security;
 
-create policy "public_games"         on games         for all to anon, authenticated using (true) with check (true);
-create policy "public_denominations" on denominations for all to anon, authenticated using (true) with check (true);
-create policy "public_players"       on players       for all to anon, authenticated using (true) with check (true);
-create policy "public_player_chips"  on player_chips  for all to anon, authenticated using (true) with check (true);
-create policy "public_buyins"        on buyins        for all to anon, authenticated using (true) with check (true);
-create policy "public_chat"          on chat_messages for all to anon, authenticated using (true) with check (true);
+-- ── games ────────────────────────────────────────────────────────────
+create policy "games_select" on games
+  for select to authenticated using (true);
+
+create policy "games_insert" on games
+  for insert to authenticated with check (true);
+
+-- ── players ──────────────────────────────────────────────────────────
+create policy "players_select" on players
+  for select to authenticated using (true);
+
+-- Users can only insert a player row tied to their own auth uid.
+create policy "players_insert" on players
+  for insert to authenticated
+  with check (auth_user_id = auth.uid());
+
+-- ── Helper: is the current user a member of a given game? ─────────────
+-- Used inline in the policies below.
+
+-- ── denominations ────────────────────────────────────────────────────
+create policy "denoms_select" on denominations
+  for select to authenticated using (true);
+
+create policy "denoms_insert" on denominations
+  for insert to authenticated
+  with check (
+    exists (
+      select 1 from players
+      where players.game_id = denominations.game_id
+        and players.auth_user_id = auth.uid()
+    )
+  );
+
+create policy "denoms_delete" on denominations
+  for delete to authenticated
+  using (
+    exists (
+      select 1 from players
+      where players.game_id = denominations.game_id
+        and players.auth_user_id = auth.uid()
+    )
+  );
+
+-- ── player_chips ─────────────────────────────────────────────────────
+create policy "chips_select" on player_chips
+  for select to authenticated using (true);
+
+-- Covers both INSERT and the UPDATE half of upsert.
+create policy "chips_write" on player_chips
+  for all to authenticated
+  using (
+    exists (
+      select 1 from players
+      where players.game_id = player_chips.game_id
+        and players.auth_user_id = auth.uid()
+    )
+  )
+  with check (
+    exists (
+      select 1 from players
+      where players.game_id = player_chips.game_id
+        and players.auth_user_id = auth.uid()
+    )
+  );
+
+-- ── buyins ────────────────────────────────────────────────────────────
+create policy "buyins_select" on buyins
+  for select to authenticated using (true);
+
+create policy "buyins_insert" on buyins
+  for insert to authenticated
+  with check (
+    exists (
+      select 1 from players
+      where players.game_id = buyins.game_id
+        and players.auth_user_id = auth.uid()
+    )
+  );
+
+-- ── chat_messages ─────────────────────────────────────────────────────
+create policy "chat_select" on chat_messages
+  for select to authenticated using (true);
+
+create policy "chat_insert" on chat_messages
+  for insert to authenticated
+  with check (
+    exists (
+      select 1 from players
+      where players.game_id = chat_messages.game_id
+        and players.auth_user_id = auth.uid()
+    )
+  );
 
 -- ============================================================
 -- Realtime

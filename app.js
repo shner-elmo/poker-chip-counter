@@ -86,6 +86,19 @@ function calcSettlements(players, denoms) {
   return txns;
 }
 
+// ── Auth ───────────────────────────────────────────────────
+
+// Signs in anonymously if there is no active session.
+// Every browser gets a real JWT, which RLS policies require.
+// Prerequisite: enable "Anonymous sign-ins" in Supabase Dashboard → Auth → Providers.
+async function ensureAuth() {
+  const { data: { session } } = await db.auth.getSession();
+  if (!session) {
+    const { error } = await db.auth.signInAnonymously();
+    if (error) throw error;
+  }
+}
+
 // ── Database helpers ───────────────────────────────────────
 
 // Fetches all 5 tables in parallel and assembles the gameState shape
@@ -127,10 +140,17 @@ async function loadGameState() {
 // ── Game actions ───────────────────────────────────────────
 
 async function createGame(hostName, denoms) {
+  const { data: { user } } = await db.auth.getUser();
   const id = genGameId();
 
   const { error: ge } = await db.from('games').insert({ id });
   if (ge) throw ge;
+
+  // Player is inserted before denominations so the membership RLS check
+  // on denominations_insert passes (it looks for a players row with auth_user_id = auth.uid()).
+  const { data: [host], error: pe } = await db
+    .from('players').insert({ game_id: id, name: hostName, auth_user_id: user.id }).select();
+  if (pe) throw pe;
 
   const denomRows = denoms.map((d, i) => ({
     id: uuid(), game_id: id, label: d.label, color: d.color, value: d.value, sort_order: i,
@@ -138,15 +158,12 @@ async function createGame(hostName, denoms) {
   const { error: de } = await db.from('denominations').insert(denomRows);
   if (de) throw de;
 
-  const { data: [host], error: pe } = await db
-    .from('players').insert({ game_id: id, name: hostName }).select();
-  if (pe) throw pe;
-
   return { id, hostPlayerId: host.id };
 }
 
 async function addPlayer(name) {
-  const { error } = await db.from('players').insert({ game_id: gameId, name });
+  const { data: { user } } = await db.auth.getUser();
+  const { error } = await db.from('players').insert({ game_id: gameId, name, auth_user_id: user.id });
   if (error) throw error;
 }
 
@@ -435,8 +452,11 @@ async function init() {
   const params = new URLSearchParams(location.search);
   gameId = params.get('game');
 
-  if (!gameId) { showLanding(); return; }
   if (!configured) { showLanding(); return; }
+
+  await ensureAuth();
+
+  if (!gameId) { showLanding(); return; }
 
   try {
     gameState = await loadGameState();
