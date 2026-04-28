@@ -14,7 +14,10 @@
       <div class="landing-icon">&#9827;</div>
       <h1>Poker Chip Counter</h1>
       <p>Track chips, buy-ins, and settle up after the game.</p>
-      <button id="btn-new-game" class="btn btn-primary btn-lg">New Game</button>
+      <div class="landing-buttons">
+        <button id="btn-new-game" class="btn btn-primary btn-lg">New Game</button>
+        <button id="btn-join-game" class="btn btn-lg">Join Game</button>
+      </div>
     </div>
   </div>
 
@@ -71,6 +74,19 @@
 
   <!-- ── Modals ─────────────────────────────────────────── -->
   <div id="modal-overlay" class="modal-overlay hidden">
+
+    <!-- Join Game -->
+    <div id="modal-join-game" class="modal hidden">
+      <h2>Join Game</h2>
+      <div class="form-group">
+        <label>Game Code</label>
+        <input id="jg-code" type="text" class="input input-mono" placeholder="e.g. AB3X7K" maxlength="6" autocomplete="off" spellcheck="false">
+      </div>
+      <div class="modal-actions">
+        <button id="jg-cancel" class="btn">Cancel</button>
+        <button id="jg-join" class="btn btn-primary">Join</button>
+      </div>
+    </div>
 
     <!-- New Game -->
     <div id="modal-new-game" class="modal hidden">
