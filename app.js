@@ -525,6 +525,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (!denoms.length) { alert('Add at least one chip denomination.'); return; }
 
     try {
+      await ensureAuth();
       const { id } = await createGame(hostName, denoms);
       gameId    = id;
       gameState = await loadGameState();
