@@ -27,11 +27,9 @@ port = 54324
 
 [storage]
 enabled = true
-port = 54325
 
 [auth]
 enabled = true
-port = 54326
 site_url = "http://localhost:3000"
 additional_redirect_urls = ["https://shner-elmo.github.io"]
 jwt_expiry = 3600
