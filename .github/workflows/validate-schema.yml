@@ -1,0 +1,47 @@
+name: Validate Database Schema
+
+on:
+  push:
+    paths:
+      - schema.sql
+  pull_request:
+    paths:
+      - schema.sql
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: poker_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Create Supabase stubs
+        env:
+          PGPASSWORD: postgres
+        run: |
+          psql -h localhost -U postgres -d poker_test <<'SQL'
+            create schema auth;
+            create table auth.users (id uuid primary key);
+            create function auth.uid() returns uuid language sql stable as $$ select null::uuid $$;
+            create role authenticated;
+            create publication supabase_realtime;
+          SQL
+
+      - name: Apply schema.sql
+        env:
+          PGPASSWORD: postgres
+        run: psql -h localhost -U postgres -d poker_test -f schema.sql
