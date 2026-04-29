@@ -2,8 +2,8 @@
 //  CONFIGURATION  —  paste your Supabase project credentials below
 //  Find them at: https://supabase.com/dashboard → your project → Settings → API
 // ─────────────────────────────────────────────────────────────
-const SUPABASE_URL      = 'YOUR_SUPABASE_URL';       // e.g. https://xxxxxxxxxxxx.supabase.co
-const SUPABASE_ANON_KEY = 'YOUR_SUPABASE_ANON_KEY';  // safe to expose — security via RLS
+const SUPABASE_URL      = 'https://jinqcgawxcbhhvdnvyij.supabase.co';
+const SUPABASE_ANON_KEY = 'sb_publishable_doIofc4X3Fu0-exOQ7oCSg_jDGMdRJ0';  // safe to expose — security via RLS
 // ─────────────────────────────────────────────────────────────
 
 const DEFAULT_DENOMS = [
