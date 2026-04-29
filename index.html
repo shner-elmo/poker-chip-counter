@@ -80,7 +80,7 @@
       <h2>Join Game</h2>
       <div class="form-group">
         <label>Game Code</label>
-        <input id="jg-code" type="text" class="input input-mono" placeholder="e.g. AB3X7K" maxlength="6" autocomplete="off" spellcheck="false">
+        <input id="jg-code" type="text" class="input input-mono" placeholder="e.g. AB3X7K2P" maxlength="8" autocomplete="off" spellcheck="false">
       </div>
       <div class="modal-actions">
         <button id="jg-cancel" class="btn">Cancel</button>
@@ -159,8 +159,9 @@
   <!-- ── Config Error Banner ────────────────────────────── -->
   <div id="config-error" class="config-error hidden">
     <strong>Setup required:</strong> Open <code>app.js</code> and fill in your
-    <code>SUPABASE_URL</code> and <code>SUPABASE_ANON_KEY</code>. See
-    <code>schema.sql</code> for the database setup.
+    <code>SUPABASE_URL</code> and <code>SUPABASE_ANON_KEY</code>. Run
+    <code>supabase db push</code> (or paste <code>supabase/migrations/20240101000000_initial_schema.sql</code>
+    into the Supabase SQL editor) to create the database tables.
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>

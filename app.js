@@ -31,11 +31,7 @@ let myAuthUid = null;
 
 // ── Utilities ──────────────────────────────────────────────
 function uuid() {
-  if (typeof crypto !== 'undefined' && crypto.randomUUID) return crypto.randomUUID();
-  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
-    const r = Math.random() * 16 | 0;
-    return (c === 'x' ? r : (r & 0x3 | 0x8)).toString(16);
-  });
+  return crypto.randomUUID();
 }
 
 function genGameId() {
@@ -193,9 +189,10 @@ async function addDenom(label, color, value) {
 }
 
 async function removeDenom(denomId) {
+  const denom = gameState?.denominations?.find(d => d.id === denomId);
+  if (!confirm(`Remove "${denom?.label || 'this chip'}"? This will delete all chip counts for this denomination.`)) return;
   const { error } = await db.from('denominations').delete().eq('id', denomId);
   if (error) throw error;
-  // player_chips rows for this denomination cascade-delete via FK
 }
 
 async function postChat(playerName, message) {
@@ -665,7 +662,12 @@ document.addEventListener('DOMContentLoaded', () => {
     btn.disabled = true;
     setTimeout(() => (btn.disabled = false), 3000);
 
-    try { await postChat(name, msg); } catch (e) { console.error(e); }
+    try {
+      await postChat(name, msg);
+    } catch (e) {
+      msgEl.value = msg;
+      alert('Could not send message: ' + e.message);
+    }
   }
 
   document.getElementById('btn-send-chat').addEventListener('click', sendChat);
