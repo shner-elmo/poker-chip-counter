@@ -1,17 +1,11 @@
 -- ============================================================
--- Poker Chip Counter — Supabase Database Setup
---
--- Option A (Supabase CLI — recommended):
---   supabase link --project-ref jinqcgawxcbhhvdnvyij
---   supabase db push
---
--- Option B (manual):
---   Supabase Dashboard → SQL Editor → New query → paste & run
+-- Poker Chip Counter — Initial Schema
+-- Applied automatically via: supabase db push
 -- ============================================================
 
 -- 1. Games
 create table if not exists games (
-  id          text        primary key,   -- 6-char code e.g. "AB3X7K"
+  id          text        primary key,
   created_at  timestamptz not null default now()
 );
 
@@ -32,7 +26,7 @@ create table if not exists players (
   id           uuid        primary key default gen_random_uuid(),
   game_id      text        not null references games(id) on delete cascade,
   name         text        not null,
-  auth_user_id uuid        not null references auth.users(id),  -- ties row to the browser session
+  auth_user_id uuid        not null references auth.users(id),
   created_at   timestamptz not null default now()
 );
 
@@ -75,15 +69,6 @@ create index if not exists chat_messages_game_id_idx on chat_messages(game_id);
 
 -- ============================================================
 -- Row Level Security
---
--- All users sign in anonymously on page load (app.js: ensureAuth).
--- This gives every browser session a real JWT and an auth.uid(),
--- so every policy targets the `authenticated` role only.
---
--- Write rules:
---   games       → any authenticated user can create a game
---   players     → any authenticated user can join, but auth_user_id must equal their own uid
---   everything  → only game members (players rows with matching auth_user_id) can write
 -- ============================================================
 
 alter table games         enable row level security;
@@ -94,105 +79,126 @@ alter table buyins        enable row level security;
 alter table chat_messages enable row level security;
 
 -- ── games ────────────────────────────────────────────────────────────
-create policy "games_select" on games
-  for select to authenticated using (true);
+do $$ begin
+  create policy "games_select" on games
+    for select to authenticated using (true);
+exception when duplicate_object then null; end $$;
 
-create policy "games_insert" on games
-  for insert to authenticated with check (true);
+do $$ begin
+  create policy "games_insert" on games
+    for insert to authenticated with check (true);
+exception when duplicate_object then null; end $$;
 
 -- ── players ──────────────────────────────────────────────────────────
-create policy "players_select" on players
-  for select to authenticated using (true);
+do $$ begin
+  create policy "players_select" on players
+    for select to authenticated using (true);
+exception when duplicate_object then null; end $$;
 
--- Users can only insert a player row tied to their own auth uid.
-create policy "players_insert" on players
-  for insert to authenticated
-  with check (auth_user_id = auth.uid());
-
--- ── Helper: is the current user a member of a given game? ─────────────
--- Used inline in the policies below.
+do $$ begin
+  create policy "players_insert" on players
+    for insert to authenticated
+    with check (auth_user_id = auth.uid());
+exception when duplicate_object then null; end $$;
 
 -- ── denominations ────────────────────────────────────────────────────
-create policy "denoms_select" on denominations
-  for select to authenticated using (true);
+do $$ begin
+  create policy "denoms_select" on denominations
+    for select to authenticated using (true);
+exception when duplicate_object then null; end $$;
 
-create policy "denoms_insert" on denominations
-  for insert to authenticated
-  with check (
-    exists (
-      select 1 from players
-      where players.game_id = denominations.game_id
-        and players.auth_user_id = auth.uid()
-    )
-  );
+do $$ begin
+  create policy "denoms_insert" on denominations
+    for insert to authenticated
+    with check (
+      exists (
+        select 1 from players
+        where players.game_id = denominations.game_id
+          and players.auth_user_id = auth.uid()
+      )
+    );
+exception when duplicate_object then null; end $$;
 
-create policy "denoms_delete" on denominations
-  for delete to authenticated
-  using (
-    exists (
-      select 1 from players
-      where players.game_id = denominations.game_id
-        and players.auth_user_id = auth.uid()
-    )
-  );
+do $$ begin
+  create policy "denoms_delete" on denominations
+    for delete to authenticated
+    using (
+      exists (
+        select 1 from players
+        where players.game_id = denominations.game_id
+          and players.auth_user_id = auth.uid()
+      )
+    );
+exception when duplicate_object then null; end $$;
 
 -- ── player_chips ─────────────────────────────────────────────────────
-create policy "chips_select" on player_chips
-  for select to authenticated using (true);
+do $$ begin
+  create policy "chips_select" on player_chips
+    for select to authenticated using (true);
+exception when duplicate_object then null; end $$;
 
--- Covers both INSERT and the UPDATE half of upsert.
-create policy "chips_write" on player_chips
-  for all to authenticated
-  using (
-    exists (
-      select 1 from players
-      where players.game_id = player_chips.game_id
-        and players.auth_user_id = auth.uid()
+do $$ begin
+  create policy "chips_write" on player_chips
+    for all to authenticated
+    using (
+      exists (
+        select 1 from players
+        where players.game_id = player_chips.game_id
+          and players.auth_user_id = auth.uid()
+      )
     )
-  )
-  with check (
-    exists (
-      select 1 from players
-      where players.game_id = player_chips.game_id
-        and players.auth_user_id = auth.uid()
-    )
-  );
+    with check (
+      exists (
+        select 1 from players
+        where players.game_id = player_chips.game_id
+          and players.auth_user_id = auth.uid()
+      )
+    );
+exception when duplicate_object then null; end $$;
 
 -- ── buyins ────────────────────────────────────────────────────────────
-create policy "buyins_select" on buyins
-  for select to authenticated using (true);
+do $$ begin
+  create policy "buyins_select" on buyins
+    for select to authenticated using (true);
+exception when duplicate_object then null; end $$;
 
-create policy "buyins_insert" on buyins
-  for insert to authenticated
-  with check (
-    exists (
-      select 1 from players
-      where players.game_id = buyins.game_id
-        and players.auth_user_id = auth.uid()
-    )
-  );
+do $$ begin
+  create policy "buyins_insert" on buyins
+    for insert to authenticated
+    with check (
+      exists (
+        select 1 from players
+        where players.game_id = buyins.game_id
+          and players.auth_user_id = auth.uid()
+      )
+    );
+exception when duplicate_object then null; end $$;
 
 -- ── chat_messages ─────────────────────────────────────────────────────
-create policy "chat_select" on chat_messages
-  for select to authenticated using (true);
+do $$ begin
+  create policy "chat_select" on chat_messages
+    for select to authenticated using (true);
+exception when duplicate_object then null; end $$;
 
-create policy "chat_insert" on chat_messages
-  for insert to authenticated
-  with check (
-    auth_user_id = auth.uid()
-    AND exists (
-      select 1 from players
-      where players.game_id = chat_messages.game_id
-        and players.auth_user_id = auth.uid()
-        and players.name = chat_messages.player_name
-    )
-    AND NOT EXISTS (
-      select 1 from chat_messages recent
-      where recent.game_id = chat_messages.game_id
-        and recent.auth_user_id = auth.uid()
-        and recent.created_at > now() - interval '3 seconds'
-    )
-  );
+do $$ begin
+  create policy "chat_insert" on chat_messages
+    for insert to authenticated
+    with check (
+      auth_user_id = auth.uid()
+      AND exists (
+        select 1 from players
+        where players.game_id = chat_messages.game_id
+          and players.auth_user_id = auth.uid()
+          and players.name = chat_messages.player_name
+      )
+      AND NOT EXISTS (
+        select 1 from chat_messages recent
+        where recent.game_id = chat_messages.game_id
+          and recent.auth_user_id = auth.uid()
+          and recent.created_at > now() - interval '3 seconds'
+      )
+    );
+exception when duplicate_object then null; end $$;
 
 -- ============================================================
 -- Realtime
